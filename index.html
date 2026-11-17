@@ -3,34 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nearest Mosques</title>
+    <title>Live Mosque Radar</title>
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f7f6; padding: 20px; max-width: 500px; margin: 0 auto; }
         h2 { text-align: center; color: #333; }
-        .card { background: white; padding: 15px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .card h3 { margin: 0 0 10px 0; color: #2c3e50; }
-        .times { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 14px; }
-        .distance { color: #27ae60; font-weight: bold; margin-bottom: 10px; display: inline-block; }
-        .btn { display: block; width: 100%; padding: 12px; background: #2980b9; color: white; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-bottom: 15px; }
-        .btn:active { background: #2471a3; }
+        .card { background: white; padding: 15px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 5px solid #27ae60; }
+        .card h3 { margin: 0 0 8px 0; color: #2c3e50; font-size: 18px; line-height: 1.3;}
+        .distance { color: #e74c3c; font-weight: bold; font-size: 16px; display: block; }
+        .btn { display: block; width: 100%; padding: 15px; background: #27ae60; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-bottom: 15px; }
+        .btn:active { background: #219150; }
         .hidden { display: none; }
+        #live-status { text-align: center; font-weight: bold; color: #2980b9; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
-    <h2>Nearby Jamaat Times</h2>
-    <button id="findBtn" class="btn">Find Nearest Mosques</button>
-    <p id="status"></p>
+    <h2>Live Mosque Radar</h2>
+    <button id="startBtn" class="btn">Start Live Radar</button>
+    <p id="live-status"></p>
     
     <div id="mosqueList"></div>
-    <button id="loadMoreBtn" class="btn hidden">Load More (5)</button>
 
     <script>
-        let nearbyMosques = [];
-        let currentlyDisplayed = 0;
-        const BATCH_SIZE = 5;
-        const MAX_DISTANCE_KM = 1.0; 
+        let mosquesData = []; 
+        let watchId = null;
 
+        // Math to calculate distance between coordinates
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; 
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -39,80 +37,102 @@
                       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                       Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            return R * c; 
         }
 
-        document.getElementById('findBtn').addEventListener('click', () => {
-            const statusText = document.getElementById('status');
-            statusText.innerText = "Locating...";
-            
+        document.getElementById('startBtn').addEventListener('click', () => {
+            const statusText = document.getElementById('live-status');
+            document.getElementById('startBtn').classList.add('hidden');
+            statusText.innerText = "Connecting to GPS...";
+
             if (!navigator.geolocation) {
-                statusText.innerText = "Geolocation is not supported by your browser.";
+                statusText.innerText = "GPS is not supported by your browser.";
                 return;
             }
 
+            // Get location ONCE to download the map data
             navigator.geolocation.getCurrentPosition(position => {
                 const userLat = position.coords.latitude;
                 const userLon = position.coords.longitude;
-                statusText.innerText = "Location found. Searching mosques...";
+                statusText.innerText = "Scanning 3km radius on OpenStreetMap...";
 
-                fetch('mosques.json')
+                // Query OpenStreetMap for mosques (amenity=place_of_worship, religion=muslim)
+                const radius = 3000; // 3 kilometers
+                const query = `[out:json];(node["amenity"="place_of_worship"]["religion"="muslim"](around:${radius},${userLat},${userLon});way["amenity"="place_of_worship"]["religion"="muslim"](around:${radius},${userLat},${userLon}););out center;`;
+                const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+
+                fetch(url)
                     .then(response => response.json())
                     .then(data => {
-                        nearbyMosques = data.map(mosque => {
-                            mosque.distance = calculateDistance(userLat, userLon, mosque.location.latitude, mosque.location.longitude);
-                            return mosque;
-                        }).filter(mosque => mosque.distance <= MAX_DISTANCE_KM)
-                          .sort((a, b) => a.distance - b.distance);
+                        // Save the downloaded mosques into our array
+                        mosquesData = data.elements.map(el => {
+                            return {
+                                id: el.id,
+                                name: el.tags.name || "Unnamed Mosque",
+                                lat: el.lat || el.center.lat,
+                                lon: el.lon || el.center.lon
+                            };
+                        });
 
-                        statusText.innerText = `Found ${nearbyMosques.length} mosques within 1 km.`;
-                        currentlyDisplayed = 0;
-                        document.getElementById('mosqueList').innerHTML = "";
+                        statusText.innerText = `Radar Active: Tracking ${mosquesData.length} mosques around you.`;
                         
-                        document.getElementById('findBtn').classList.add('hidden');
-                        displayNextBatch();
+                        // Start tracking the user's movement LIVE
+                        startLiveTracking();
                     })
                     .catch(err => {
-                        statusText.innerText = "Error loading mosque data.";
+                        statusText.innerText = "Error connecting to OpenStreetMap.";
                         console.error(err);
                     });
-            }, () => {
-                statusText.innerText = "Please allow location access to find nearby mosques.";
-            });
+            }, error => {
+                statusText.innerText = "Please allow location permissions.";
+            }, { enableHighAccuracy: true });
         });
 
-        document.getElementById('loadMoreBtn').addEventListener('click', displayNextBatch);
+        function startLiveTracking() {
+            // watchPosition runs continuously as you move
+            watchId = navigator.geolocation.watchPosition(position => {
+                const currentLat = position.coords.latitude;
+                const currentLon = position.coords.longitude;
 
-        function displayNextBatch() {
+                // Update the distance for every mosque in our downloaded list
+                let nearbyMosques = mosquesData.map(mosque => {
+                    mosque.distance = calculateDistance(currentLat, currentLon, mosque.lat, mosque.lon);
+                    return mosque;
+                });
+
+                // Sort closest to farthest
+                nearbyMosques.sort((a, b) => a.distance - b.distance);
+
+                // Show only the 5 closest mosques
+                const top5 = nearbyMosques.slice(0, 5);
+                updateUI(top5);
+                
+            }, error => {
+                console.error("GPS Error", error);
+            }, { 
+                enableHighAccuracy: true, // Forces phone to use real hardware GPS
+                maximumAge: 0 // Do not use cached locations
+            });
+        }
+
+        function updateUI(mosques) {
             const container = document.getElementById('mosqueList');
-            const end = currentlyDisplayed + BATCH_SIZE;
-            const batch = nearbyMosques.slice(currentlyDisplayed, end);
+            container.innerHTML = ""; // Clear old list
 
-            batch.forEach(mosque => {
+            mosques.forEach(mosque => {
+                let distanceDisplay = (mosque.distance * 1000).toFixed(0) + " meters away";
+                if(mosque.distance >= 1) {
+                     distanceDisplay = mosque.distance.toFixed(2) + " km away"; // Show km if it's far
+                }
+
                 const card = document.createElement('div');
                 card.className = 'card';
                 card.innerHTML = `
                     <h3>${mosque.name}</h3>
-                    <span class="distance">${(mosque.distance * 1000).toFixed(0)} meters away</span>
-                    <div class="times">
-                        <div><strong>Fajr:</strong> ${mosque.prayer_times.fajr}</div>
-                        <div><strong>Dhuhr:</strong> ${mosque.prayer_times.dhuhr}</div>
-                        <div><strong>Asr:</strong> ${mosque.prayer_times.asr}</div>
-                        <div><strong>Maghrib:</strong> ${mosque.prayer_times.maghrib}</div>
-                        <div><strong>Isha:</strong> ${mosque.prayer_times.isha}</div>
-                        <div><strong>Jumu'ah:</strong> ${mosque.prayer_times.jumuah}</div>
-                    </div>
+                    <span class="distance">📍 ${distanceDisplay}</span>
                 `;
                 container.appendChild(card);
             });
-
-            currentlyDisplayed += batch.length;
-
-            if (currentlyDisplayed >= nearbyMosques.length) {
-                document.getElementById('loadMoreBtn').classList.add('hidden');
-            } else {
-                document.getElementById('loadMoreBtn').classList.remove('hidden');
-            }
         }
     </script>
 </body>
