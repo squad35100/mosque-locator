@@ -1,0 +1,38 @@
+[
+  {
+    "id": "1",
+    "name": "Masjid-e-Example 1",
+    "location": {
+      "latitude": 17.3850,
+      "longitude": 78.4867,
+      "address": "Hyderabad"
+    },
+    "prayer_times": {
+      "fajr": "05:15 AM",
+      "dhuhr": "01:00 PM",
+      "asr": "04:30 PM",
+      "maghrib": "05:45 PM",
+      "isha": "07:30 PM",
+      "jumuah": "01:15 PM"
+    },
+    "last_updated": "2026-11-17"
+  },
+  {
+    "id": "2",
+    "name": "Masjid-e-Example 2",
+    "location": {
+      "latitude": 17.3865,
+      "longitude": 78.4880,
+      "address": "Hyderabad"
+    },
+    "prayer_times": {
+      "fajr": "05:20 AM",
+      "dhuhr": "01:00 PM",
+      "asr": "04:30 PM",
+      "maghrib": "05:45 PM",
+      "isha": "07:30 PM",
+      "jumuah": "01:15 PM"
+    },
+    "last_updated": "2026-11-17"
+  }
+]
